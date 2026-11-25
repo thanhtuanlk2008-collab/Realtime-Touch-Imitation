@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
 import android.graphics.Path
+import android.graphics.Rect
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -24,6 +25,7 @@ class MacroAccessibilityService : AccessibilityService() {
             private set
         @Volatile var isRecording: Boolean = false
         val recordedSteps = mutableListOf<MacroStep>()
+        @Volatile var lastRecordedEventTime: Long = 0L
         @Volatile var isPlaying: Boolean = false
     }
 
@@ -41,7 +43,61 @@ class MacroAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) { /* passive recording unused */ }
+    /**
+     * Best-effort passive recorder. It never intercepts or re-dispatches user input.
+     * Accessibility events are semantic UI events, not raw MotionEvents. Games
+     * rendered into a canvas or SurfaceView may expose no useful accessibility nodes.
+     */
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (!isRecording || isPlaying || event == null) return
+        if (event.packageName?.toString() == packageName) return
+        val type = when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> StepType.TAP
+            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> StepType.LONG_PRESS
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    if (event.scrollDeltaY < 0) StepType.SCROLL_DOWN else StepType.SCROLL_UP
+                } else {
+                    if (event.scrollY > 0) StepType.SCROLL_DOWN else StepType.SCROLL_UP
+                }
+            }
+            else -> return
+        }
+        val node = event.source ?: return
+        try {
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            if (bounds.isEmpty) return
+            val cx = bounds.exactCenterX()
+            val cy = bounds.exactCenterY()
+            val y2 = when (type) {
+                StepType.SCROLL_UP -> (cy - bounds.height() * 0.35f).coerceAtLeast(bounds.top.toFloat())
+                StepType.SCROLL_DOWN -> (cy + bounds.height() * 0.35f).coerceAtMost(bounds.bottom.toFloat())
+                else -> cy
+            }
+            val now = event.eventTime
+            val previous = lastRecordedEventTime
+            val delayBefore = if (previous == 0L) 0L else (now - previous).coerceIn(0L, 60000L)
+            val duration = when (type) {
+                StepType.LONG_PRESS -> 600L
+                StepType.SCROLL_UP, StepType.SCROLL_DOWN -> 300L
+                else -> 100L
+            }
+            synchronized(recordedSteps) {
+                recordedSteps.add(MacroStep(
+                    macroId = 0L, stepIndex = recordedSteps.size, type = type,
+                    x = cx, y = cy, x2 = cx, y2 = y2, duration = duration,
+                    delayBefore = delayBefore, label = "Accessibility event"
+                ))
+            }
+            lastRecordedEventTime = now
+        } catch (e: Exception) {
+            AppLogger.w("Record", "Could not capture accessibility event: ${e.message}")
+        } finally {
+            @Suppress("DEPRECATION")
+            node.recycle()
+        }
+    }
 
     // ── Playback ──────────────────────────────────────────────────────────────
     fun playSteps(
