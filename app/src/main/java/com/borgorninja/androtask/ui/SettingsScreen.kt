@@ -1,6 +1,7 @@
 package com.borgorninja.androtask.ui
 
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,7 +60,7 @@ fun SettingsScreen(navController: NavController) {
                 }
                 Spacer(Modifier.height(6.dp))
                 SettingsButton("Draw Over Other Apps", Icons.Default.Layers) {
-                    context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                    context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
                 }
             }
 
