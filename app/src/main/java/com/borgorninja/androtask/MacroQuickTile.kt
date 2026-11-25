@@ -12,7 +12,7 @@ class MacroQuickTile : TileService() {
     override fun onClick() {
         val cmd = if (MacroAccessibilityService.isRecording)
             FloatingOverlayService.CMD_STOP else FloatingOverlayService.CMD_START
-        ContextCompat.startForegroundService(Intent(this, FloatingOverlayService::class.java)
+        ContextCompat.startForegroundService(this, Intent(this, FloatingOverlayService::class.java)
             .putExtra(FloatingOverlayService.CMD, cmd))
         updateTile()
     }
