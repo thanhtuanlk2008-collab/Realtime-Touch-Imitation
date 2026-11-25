@@ -107,7 +107,8 @@ class MacroAccessibilityService : AccessibilityService() {
         speedMultiplier: Float = 1f,
         recordedWidth: Int    = 0,
         recordedHeight: Int   = 0,
-        startFromIndex: Int   = 0
+        startFromIndex: Int   = 0,
+        maxRunMillis: Long = 0L
     ) {
         if (steps.isEmpty()) {
             AppLogger.w("Play", "playSteps called with empty list — nothing to do")
@@ -132,11 +133,14 @@ class MacroAccessibilityService : AccessibilityService() {
                 AppLogger.d("Play", "Screen ${sw.toInt()}x${sh.toInt()}  recorded ${recordedWidth}x${recordedHeight}  scale=(${scaleX},${scaleY})")
 
                 val ordered = steps.sortedBy { it.stepIndex }.drop(startFromIndex)
-                val loops   = if (loopCount <= 0) 1 else loopCount
+                val loops   = if (loopCount <= 0) Int.MAX_VALUE else loopCount
+                val runStartedAt = System.currentTimeMillis()
 
                 repeat(loops) { iter ->
+                    if (maxRunMillis > 0L && System.currentTimeMillis() - runStartedAt >= maxRunMillis) return@repeat
                     AppLogger.d("Play", "Loop ${iter+1}/$loops")
                     for ((i, step) in ordered.withIndex()) {
+                        if (maxRunMillis > 0L && System.currentTimeMillis() - runStartedAt >= maxRunMillis) { isPlaying = false; break }
                         if (!isPlaying) {
                             AppLogger.i("Play", "Playback stopped at step ${i+1}")
                             return@launch
@@ -145,7 +149,8 @@ class MacroAccessibilityService : AccessibilityService() {
                         if (delayMs > 0) { AppLogger.d("Play", "Delay ${delayMs}ms"); delay(delayMs) }
                         dispatchStep(step, scaleX, scaleY, speedMultiplier)
                     }
-                    if (iter < loops - 1 && loopDelay > 0) delay(loopDelay)
+                    if (iter < loops - 1 && loopDelay > 0 && isPlaying) delay(loopDelay)
+                    if (maxRunMillis > 0L && System.currentTimeMillis() - runStartedAt >= maxRunMillis) break
                 }
                 AppLogger.i("Play", "Playback finished normally")
             } catch (e: Exception) {
