@@ -3,6 +3,7 @@ package com.borgorninja.androtask
 import android.content.Intent
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.core.content.ContextCompat
 
 class MacroQuickTile : TileService() {
 
@@ -11,7 +12,7 @@ class MacroQuickTile : TileService() {
     override fun onClick() {
         val cmd = if (MacroAccessibilityService.isRecording)
             FloatingOverlayService.CMD_STOP else FloatingOverlayService.CMD_START
-        startService(Intent(this, FloatingOverlayService::class.java)
+        ContextCompat.startForegroundService(Intent(this, FloatingOverlayService::class.java)
             .putExtra(FloatingOverlayService.CMD, cmd))
         updateTile()
     }
