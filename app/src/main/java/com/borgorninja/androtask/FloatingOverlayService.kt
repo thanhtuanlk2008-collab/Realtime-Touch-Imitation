@@ -203,7 +203,8 @@ class FloatingOverlayService : Service() {
                 downRawX    = ev.rawX; downRawY = ev.rawY
                 lastRawX    = ev.rawX; lastRawY = ev.rawY
                 totalPathLen = 0f
-                downTime    = ev.eventTime            }
+                downTime    = ev.eventTime
+            }
 
             MotionEvent.ACTION_MOVE -> {
                 // Accumulate total travel distance — detects swipes even if finger ends near start
@@ -217,27 +218,29 @@ class FloatingOverlayService : Service() {
                 val dur  = (ev.eventTime - downTime).coerceIn(0L, 10_000L)
                 // dx/dy from true start to true end (for direction)
                 val dx   = endX - downRawX; val dy = endY - downRawY
-                val directDist = hypot(dx, dy)
 
                 // Use total path length to detect swipe (catches circular/wavy gestures too)
                 val isSwipe = totalPathLen > 40f
 
                 val idx  = MacroAccessibilityService.recordedSteps.size
                 val step = when {
-                    isSwipe -> {                        MacroStep(
+                    isSwipe -> {
+                        MacroStep(
                             macroId = 0, stepIndex = idx, type = StepType.SWIPE,
                             x = downRawX, y = downRawY,
                             x2 = endX,    y2 = endY,
                             duration = dur.coerceIn(100L, 3_000L)
                         )
                     }
-                    dur >= 500L -> {                        MacroStep(
+                    dur >= 500L -> {
+                        MacroStep(
                             macroId = 0, stepIndex = idx, type = StepType.LONG_PRESS,
                             x = downRawX, y = downRawY,
                             duration = dur.coerceIn(600L, 5_000L)
                         )
                     }
-                    else -> {                        MacroStep(
+                    else -> {
+                        MacroStep(
                             macroId = 0, stepIndex = idx, type = StepType.TAP,
                             x = downRawX, y = downRawY, duration = 100L
                         )
