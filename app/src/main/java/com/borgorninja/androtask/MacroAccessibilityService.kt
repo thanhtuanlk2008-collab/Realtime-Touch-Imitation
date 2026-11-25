@@ -136,8 +136,8 @@ class MacroAccessibilityService : AccessibilityService() {
                 val loops   = if (loopCount <= 0) Int.MAX_VALUE else loopCount
                 val runStartedAt = System.currentTimeMillis()
 
-                repeat(loops) { iter ->
-                    if (maxRunMillis > 0L && System.currentTimeMillis() - runStartedAt >= maxRunMillis) return@repeat
+                for (iter in 0 until loops) {
+                    if (maxRunMillis > 0L && System.currentTimeMillis() - runStartedAt >= maxRunMillis) break
                     AppLogger.d("Play", "Loop ${iter+1}/$loops")
                     for ((i, step) in ordered.withIndex()) {
                         if (maxRunMillis > 0L && System.currentTimeMillis() - runStartedAt >= maxRunMillis) { isPlaying = false; break }
