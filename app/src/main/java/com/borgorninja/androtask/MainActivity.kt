@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
                         val id = back.arguments?.getString("id")?.toLongOrNull() ?: 0L
                         MacroEditorScreen(nav, id, viewModel)
                     }
+                    composable("autoclicker") { AutoClickerScreen(nav, viewModel) }
                     composable("settings")    { SettingsScreen(nav) }
                     composable("onboarding")  { OnboardingScreen(nav) }
                     composable("logs")        { LogScreen(nav) }
