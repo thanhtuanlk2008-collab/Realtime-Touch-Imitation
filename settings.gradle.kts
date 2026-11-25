@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AndroTask"
+rootProject.name = "RealtimeTouchImitation"
 include(":app")

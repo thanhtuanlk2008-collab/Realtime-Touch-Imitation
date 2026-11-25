@@ -13,7 +13,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="AndroTask"
+        android:label="Realtime Touch Imitation"
         android:supportsRtl="true"
         android:theme="@style/Theme.AndroTask">
 
@@ -29,7 +29,7 @@
         <service
             android:name=".MacroAccessibilityService"
             android:exported="true"
-            android:label="AndroTask Accessibility"
+            android:label="Realtime Touch Imitation Accessibility"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

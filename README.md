@@ -1,134 +1,61 @@
-# AndroTask
+# Realtime Touch Imitation
 
-A no-root Android macro recorder inspired by Macrorify, powered by Android Accessibility Services.
-Record, edit, and replay touch/swipe/pinch gestures — no programming knowledge or root required.
+A single-touch Android macro recorder and replay project based on Android Accessibility Services.
 
----
+## Current capabilities
 
-## Features
+- Capture single-pointer tap, long-press and swipe gestures using a full-screen overlay.
+- Store gesture coordinates and timing, then replay them through Android AccessibilityService gesture dispatch.
+- Edit and replay saved macros, including loops and per-step timing.
+- Floating recording controls and a persistent foreground notification.
+- No root required for the current overlay-capture and accessibility-playback implementation.
 
-| Feature | Details |
-|---|---|
-| **Gesture recording** | Tap, long-press, swipe, pinch, scroll, volume, navigation keys, text input |
-| **Two recording modes** | Passive (detects taps via accessibility events) · Overlay (intercepts touches via a transparent layer) |
-| **Playback** | Adjustable speed (0.25×–4×), loop count (including infinite ∞), per-loop delay |
-| **Human-like timing** | Per-step jitter ± ms, per-step delay-before |
-| **Enable/disable toggle** | Each macro has an on/off switch — disabled macros are greyed out and won't run |
-| **Step editor** | Edit coordinates, duration, jitter, delay, label; reorder via arrows; duplicate; play from step |
-| **Coordinate picker** | Tap "pick on screen" to choose XY coordinates visually without typing |
-| **Undo history** | 50-level undo stack in the step editor |
-| **Scheduling** | Schedule macros by time + day-of-week (Mon–Sun); correctly mapped to Android Calendar day constants |
-| **Import / Export** | JSON export per-macro or all macros; import from file or clipboard |
-| **Quick Settings tile** | Toggle recording from the notification shade |
-| **Floating bubble** | 56 dp density-independent bubble visible over any app |
-| **Dark theme** | Macrorify-inspired dark green color scheme throughout |
-| **Step type color coding** | Each step type (tap, swipe, wait, …) has its own accent color |
-| **No root required** | Uses Android Accessibility Services only |
-| **No Android Studio required** | Builds from CLI (Termux / Debian / any JDK 17 environment) |
+## Important Android limitation
 
----
+The current capture mode uses a touchable full-screen overlay. The overlay receives and records touch events, but those events are **not passed through** to the app underneath. Standard third-party Android apps cannot transparently observe every raw touchscreen event while also forwarding the original event stream to another app. Accessibility event callbacks report semantic UI changes rather than a complete raw coordinate stream. Do not interpret this mode as background/pass-through recording.
 
-## Screenshots (UI matches Macrorify)
+The recorder is intentionally single-touch: it records one pointer path and does not create a second independent touch stream.
 
-- **Home screen** — macro cards with green accent bar, enable/disable switch, step count badge, play button, overflow menu
-- **Editor** — color-coded step chips, speed slider, recording mode selector, undo button, preview/play-from-step
-- **Step editor** — visual type selector with color coding, on-screen coordinate picker
-- **Scheduling** — day-of-week chips, existing schedule list with delete
+## Latency work
 
----
+- No overlay redraw during ACTION_MOVE; redraw only after ACTION_UP/ACTION_CANCEL.
+- Removed notification updates and per-gesture log writes from the touch callback.
+- Gesture duration uses MotionEvent.eventTime (monotonic event timestamps) instead of wall-clock time.
+- Macro replay remains asynchronous through the accessibility service.
+
+These changes reduce app-side work during capture. Actual input latency still depends on Android's input dispatcher, device load, refresh rate and overlay implementation.
 
 ## Requirements
 
 - Android 8.0+ (API 26+)
 - JDK 17
-- Gradle 8.x
+- Gradle 8.9
+- Android SDK Platform 35 and Build Tools 35.0.0
 
----
+## Build locally
 
-## Build from CLI
+With Gradle 8.9, JDK 17 and Android SDK installed:
 
 ```bash
-git clone https://github.com/BorgorNinja/AndroTask.git
-cd AndroTask
-chmod +x gradlew
-./gradlew assembleDebug
+gradle --no-daemon :app:assembleDebug
 ```
 
-Output APK: `app/build/outputs/apk/debug/app-debug.apk`
+Debug APK: `app/build/outputs/apk/debug/app-debug.apk`
 
----
+Release APK (unsigned): `app/build/outputs/apk/release/app-release-unsigned.apk`
 
-## Permissions required
+This repository does not commit a signing keystore. Sign release builds with your own private keystore outside the repository.
 
-| Permission | Why |
-|---|---|
-| **Accessibility Service** | Dispatch gestures and detect taps in passive recording mode |
-| **Draw Over Other Apps** | Show floating bubble and recording overlay |
-| **Post Notifications** (Android 13+) | Persistent foreground service notification |
+## Build on GitHub
 
-Enable via the in-app **Setup** screen, or manually:
+Every push to `main` and every pull request targeting `main` runs the Android CI workflow. Debug and unsigned release APKs are uploaded as a workflow artifact.
 
-> Settings → Accessibility → AndroTask → Enable  
-> Settings → Apps → AndroTask → Display over other apps → Allow
+## Permissions
 
----
-
-## Quick start
-
-1. Enable all permissions in the **Setup** screen.
-2. Tap **+** on the home screen to create a macro.
-3. Choose recording mode: **Passive** or **Overlay**.
-4. Tap **Record Gestures**, perform your actions, tap **Stop**.
-5. Save, then tap **▶** to run.
-6. Use the **floating bubble** to toggle recording from any app.
-7. Schedule macros via the **⋮ menu → Schedule**.
-
----
-
-## Bug fixes in v1.1.0
-
-- `wm.defaultDisplay.getRealMetrics()` deprecated since API 30 → replaced with `wm.currentWindowMetrics.bounds`
-- `Divider()` deprecated in Material3 → replaced with `HorizontalDivider()`
-- `ScheduledTrigger.repeatDays` was stored but never used — alarms now correctly fire only on selected days
-- Day-of-week mismatch: stored `1=Mon…7=Sun` was not converted to `Calendar.MONDAY…Calendar.SUNDAY`
-- Macro `isEnabled` toggle was missing from DAO / repository / ViewModel / UI
-- Floating bubble was 150 raw pixels (tiny on high-DPI) → now 56 dp
-- `initialized` flag in editor not reset when navigating between macros
-- White flash on launch due to `Theme.Material.Light` → now `Theme.Material.NoActionBar` with `#0F0F0F` background
-
----
-
-## Architecture
-
-```
-MainActivity
-└── NavHost
-    ├── HomeScreen        ← macro list, enable/disable, play, export/import, schedule
-    ├── MacroEditorScreen ← step list, recording, undo, speed, save
-    │   └── StepEditDialog
-    ├── SettingsScreen
-    └── OnboardingScreen  ← permission setup
-
-FloatingOverlayService    ← foreground service, bubble, overlay capture
-MacroAccessibilityService ← gesture dispatch, passive recording
-MacroAlarmReceiver        ← scheduled macro triggers (per-day alarms)
-MacroQuickTile            ← Quick Settings tile
-
-data/
-  Macro, MacroStep, MacroWithSteps
-  ScheduledTrigger, Converters
-  MacroDao, AppDatabase, MacroRepository
-
-viewmodel/MacroViewModel  ← UI state, coroutine bridge to repo
-
-ui/
-  Theme.kt                ← Macrorify-style dark green MaterialTheme
-  HomeScreen, MacroEditorScreen, StepEditDialog
-  SettingsScreen, OnboardingScreen
-```
-
----
+- Accessibility Service: replay gestures.
+- Display over other apps: floating controls and touch-capture overlay.
+- Foreground service and notifications: keep recording controls visible while the app is in use.
 
 ## License
 
-MIT
+See the original project license and attribution requirements. This repository is a source-code copy/derivative of AndroTask; retain its MIT license notice when redistributing.

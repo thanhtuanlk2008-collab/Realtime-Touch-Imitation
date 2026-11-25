@@ -161,7 +161,14 @@ class FloatingOverlayService : Service() {
                 )
             }
             override fun onTouchEvent(ev: MotionEvent): Boolean {
-                handleRecordTouch(ev); invalidate(); return true
+                // Keep MOVE handling on the hot path allocation- and redraw-free.
+                // The step counter only changes after a gesture completes.
+                handleRecordTouch(ev)
+                if (ev.actionMasked == MotionEvent.ACTION_UP ||
+                    ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    invalidate()
+                }
+                return true
             }
         }
         val lp = baseLp(
@@ -196,9 +203,7 @@ class FloatingOverlayService : Service() {
                 downRawX    = ev.rawX; downRawY = ev.rawY
                 lastRawX    = ev.rawX; lastRawY = ev.rawY
                 totalPathLen = 0f
-                downTime    = System.currentTimeMillis()
-                AppLogger.d("Record", "DOWN  raw=(${ev.rawX.toInt()}, ${ev.rawY.toInt()})")
-            }
+                downTime    = ev.eventTime            }
 
             MotionEvent.ACTION_MOVE -> {
                 // Accumulate total travel distance — detects swipes even if finger ends near start
@@ -209,7 +214,7 @@ class FloatingOverlayService : Service() {
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
                 val endX = lastRawX;  val endY = lastRawY   // last known position
-                val dur  = (System.currentTimeMillis() - downTime).coerceIn(50L, 10_000L)
+                val dur  = (ev.eventTime - downTime).coerceIn(0L, 10_000L)
                 // dx/dy from true start to true end (for direction)
                 val dx   = endX - downRawX; val dy = endY - downRawY
                 val directDist = hypot(dx, dy)
@@ -219,39 +224,27 @@ class FloatingOverlayService : Service() {
 
                 val idx  = MacroAccessibilityService.recordedSteps.size
                 val step = when {
-                    isSwipe -> {
-                        AppLogger.i("Record",
-                            "SWIPE  (${downRawX.toInt()},${downRawY.toInt()})→" +
-                            "(${endX.toInt()},${endY.toInt()})  path=${totalPathLen.toInt()}px  " +
-                            "direct=${directDist.toInt()}px  dur=${dur}ms  " +
-                            "ev=${if(ev.actionMasked==MotionEvent.ACTION_CANCEL)"CANCEL" else "UP"}")
-                        MacroStep(
+                    isSwipe -> {                        MacroStep(
                             macroId = 0, stepIndex = idx, type = StepType.SWIPE,
                             x = downRawX, y = downRawY,
                             x2 = endX,    y2 = endY,
                             duration = dur.coerceIn(100L, 3_000L)
                         )
                     }
-                    dur >= 500L -> {
-                        AppLogger.i("Record",
-                            "LONG_PRESS  (${downRawX.toInt()},${downRawY.toInt()})  dur=${dur}ms")
-                        MacroStep(
+                    dur >= 500L -> {                        MacroStep(
                             macroId = 0, stepIndex = idx, type = StepType.LONG_PRESS,
                             x = downRawX, y = downRawY,
                             duration = dur.coerceIn(600L, 5_000L)
                         )
                     }
-                    else -> {
-                        AppLogger.i("Record",
-                            "TAP  (${downRawX.toInt()},${downRawY.toInt()})  dur=${dur}ms")
-                        MacroStep(
+                    else -> {                        MacroStep(
                             macroId = 0, stepIndex = idx, type = StepType.TAP,
                             x = downRawX, y = downRawY, duration = 100L
                         )
                     }
                 }
                 MacroAccessibilityService.recordedSteps.add(step)
-                refreshNotif()
+                // Avoid notification IPC on the touch callback; update once when recording stops.
 
                 // Reset accumulators
                 totalPathLen = 0f
