@@ -58,20 +58,23 @@ fun MacroEditorScreen(navController: NavController, macroId: Long, vm: MacroView
         }
     }
 
-    // Poll recording state and sync step list
+    // Sync steps created/edited from the floating overlay, including after recording stops.
     LaunchedEffect(Unit) {
+        var observedRevision = FloatingOverlayService.stepListRevision
         while (true) {
             delay(250)
             val svcRec = MacroAccessibilityService.isRecording
             if (isRecording != svcRec) isRecording = svcRec
-            if (isRecording) {
+            val revision = FloatingOverlayService.stepListRevision
+            if (revision != observedRevision) {
                 val captured = synchronized(MacroAccessibilityService.recordedSteps) {
                     MacroAccessibilityService.recordedSteps.toList()
                 }
-                if (captured.size != steps.size) {
-                    steps.clear()
-                    steps.addAll(captured.map { it.copy(macroId = macroId) })
-                }
+                steps.clear()
+                steps.addAll(captured.mapIndexed { index, step ->
+                    step.copy(macroId = macroId, stepIndex = index)
+                })
+                observedRevision = revision
             }
         }
     }
