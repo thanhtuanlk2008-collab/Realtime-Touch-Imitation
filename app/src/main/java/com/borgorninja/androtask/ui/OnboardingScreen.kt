@@ -80,7 +80,7 @@ fun OnboardingScreen(navController: NavController) {
             PermissionRow(
                 icon     = Icons.Default.Accessibility,
                 title    = "Accessibility Service",
-                desc     = "Required to dispatch gestures and detect taps during passive recording.",
+                desc     = "Used for macro playback and best-effort passive UI event recording. It cannot read every raw touch in games.",
                 granted  = accessOk,
                 onEnable = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
             )
@@ -88,7 +88,7 @@ fun OnboardingScreen(navController: NavController) {
             PermissionRow(
                 icon     = Icons.Default.Layers,
                 title    = "Draw Over Other Apps",
-                desc     = "Required to show the floating bubble and recording overlay.",
+                desc     = "Used only for the optional floating macro bubble and coordinate picker.",
                 granted  = overlayOk,
                 onEnable = {
                     context.startActivity(Intent(
@@ -142,13 +142,11 @@ fun OnboardingScreen(navController: NavController) {
             Text("""
 1. Enable all permissions above.
 2. Tap + on the home screen to create a macro.
-3. Choose recording mode:
-   • Passive – use the app normally; taps are detected automatically.
-   • Overlay – a transparent screen captures every touch precisely.
-4. Tap "Record Gestures", perform your actions, then tap "Stop".
-5. Save the macro. Tap ▶ to run it any time.
-6. Use the floating bubble (visible from any app) to toggle recording.
-7. Schedule macros via the ⋮ menu → Schedule.
+3. Start passive recording.
+4. Use the other app normally; this app does not intercept touch input.
+5. Stop recording and save the captured events.
+6. Tap ▶ to replay the saved steps.
+7. Android Accessibility reports semantic UI events, not the complete raw touch stream. Games may expose few or no events; swipe paths and multi-touch are not guaranteed.
             """.trimIndent(),
                 style = MaterialTheme.typography.bodySmall, color = OnBgVariant)
         }
