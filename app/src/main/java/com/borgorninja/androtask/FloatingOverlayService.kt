@@ -5,10 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.*
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.*
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.borgorninja.androtask.data.MacroStep
 import com.borgorninja.androtask.data.StepType
@@ -20,6 +24,8 @@ class FloatingOverlayService : Service() {
 
     private lateinit var wm: WindowManager
     private var bubbleView:      View? = null
+    private var menuView:        View? = null
+    private var menuRecordButton: Button? = null
     private var overlayView:     View? = null
     private var coordPickerView: View? = null
     private var isRecording = false
@@ -35,6 +41,8 @@ class FloatingOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         AppLogger.i("Overlay", "Service created")
+        wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        createNotificationChannel()
         val notif = buildNotif()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
@@ -44,6 +52,7 @@ class FloatingOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (Settings.canDrawOverlays(this) && bubbleView == null) showBubble()
         when (intent?.getStringExtra(CMD)) {
             CMD_START       -> startRecording()
             CMD_STOP        -> stopRecordingAndHide()
@@ -57,7 +66,7 @@ class FloatingOverlayService : Service() {
 
     override fun onDestroy() {
         MacroAccessibilityService.isRecording = false
-        removeBubble(); removeOverlay(); hideCoordPicker()
+        removeBubble(); hideMenu(); removeOverlay(); hideCoordPicker()
         AppLogger.i("Overlay", "Service destroyed")
         super.onDestroy()
     }
@@ -93,15 +102,22 @@ class FloatingOverlayService : Service() {
 
     // ── Bubble ────────────────────────────────────────────────────────────────
     private fun showBubble() {
-        if (bubbleView != null) return
+        if (bubbleView != null || !Settings.canDrawOverlays(this)) return
         val px = (56 * resources.displayMetrics.density).toInt()
         val lp = baseLp(px, px).apply { gravity = Gravity.TOP or Gravity.START; x = 16; y = 320 }
         val v  = BubbleView(this)
-        setupDrag(v, lp) { if (isRecording) stopRecordingAndHide() else startRecording() }
-        wm.addView(v, lp); bubbleView = v
+        setupDrag(v, lp) { toggleMenu() }
+        try {
+            wm.addView(v, lp)
+            bubbleView = v
+            AppLogger.i("Overlay", "Floating bubble displayed")
+        } catch (e: Exception) {
+            AppLogger.e("Overlay", "Could not display bubble: ${e.javaClass.simpleName}: ${e.message}")
+        }
     }
 
     private fun removeBubble() {
+        hideMenu()
         bubbleView?.let { runCatching { wm.removeView(it) }; bubbleView = null }
     }
 
@@ -112,8 +128,106 @@ class FloatingOverlayService : Service() {
         val px = (56 * resources.displayMetrics.density).toInt()
         val lp = baseLp(px, px).apply { gravity = oldLp.gravity; x = oldLp.x; y = oldLp.y }
         val v  = BubbleView(this)
-        setupDrag(v, lp) { if (isRecording) stopRecordingAndHide() else startRecording() }
+        setupDrag(v, lp) { toggleMenu() }
         wm.addView(v, lp); bubbleView = v
+    }
+
+
+    // ── Floating control menu ─────────────────────────────────────────────────
+    private fun toggleMenu() {
+        if (menuView == null) showMenu() else hideMenu()
+    }
+
+    private fun showMenu() {
+        if (menuView != null || !Settings.canDrawOverlays(this)) return
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = GradientDrawable().apply {
+                setColor(Color.argb(245, 28, 30, 34))
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), Color.argb(180, 255, 255, 255))
+            }
+        }
+        val title = TextView(this).apply {
+            text = "Realtime Touch Imitation"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setPadding(dp(6), dp(4), dp(6), dp(8))
+        }
+        panel.addView(title)
+        menuRecordButton = Button(this).apply {
+            isAllCaps = false
+            text = if (isRecording) "Dừng ghi" else "Bắt đầu ghi"
+            setOnClickListener {
+                if (isRecording) stopRecordingAndHide() else startRecording()
+                refreshMenu()
+            }
+        }
+        panel.addView(menuRecordButton, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+        val openApp = Button(this).apply {
+            isAllCaps = false
+            text = "Mở ứng dụng"
+            setOnClickListener {
+                hideMenu()
+                startActivity(Intent(this@FloatingOverlayService, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            }
+        }
+        panel.addView(openApp, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+        val close = Button(this).apply {
+            isAllCaps = false
+            text = "Đóng menu"
+            setOnClickListener { hideMenu() }
+        }
+        panel.addView(close, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+
+        val bubbleLp = bubbleView?.layoutParams as? WindowManager.LayoutParams
+        val lp = baseLp(dp(232), WindowManager.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP or Gravity.START
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+            x = (bubbleLp?.x ?: dp(16)).coerceAtLeast(0)
+            y = ((bubbleLp?.y ?: dp(320)) + dp(64)).coerceAtLeast(0)
+        }
+        try {
+            wm.addView(panel, lp)
+            menuView = panel
+            refreshMenu()
+        } catch (e: Exception) {
+            menuRecordButton = null
+            AppLogger.e("Overlay", "Could not show control menu: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private fun refreshMenu() {
+        menuRecordButton?.text = if (isRecording) "Dừng ghi" else "Bắt đầu ghi"
+        bubbleView?.invalidate()
+    }
+
+    private fun hideMenu() {
+        menuView?.let { runCatching { wm.removeView(it) } }
+        menuView = null
+        menuRecordButton = null
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                MainActivity.CHANNEL_ID,
+                "Realtime Touch Imitation",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply { description = "Floating macro controls" }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
     }
 
     // ── Recording ─────────────────────────────────────────────────────────────
@@ -126,7 +240,7 @@ class FloatingOverlayService : Service() {
         }
         MacroAccessibilityService.lastRecordedEventTime = 0L
         AppLogger.i("Record", "Passive accessibility recording started")
-        bubbleView?.invalidate()
+        refreshMenu()
         refreshNotif()
         // Passive recording: do not add a touchable full-screen overlay.
         // The floating bubble is the only overlay; game input remains untouched.
@@ -135,10 +249,10 @@ class FloatingOverlayService : Service() {
     private fun stopRecordingAndHide() {
         isRecording = false
         MacroAccessibilityService.isRecording = false
-        removeOverlay(); removeBubble(); hideCoordPicker()
+        removeOverlay(); hideCoordPicker()
         AppLogger.i("Record", "Passive recording stopped — ${MacroAccessibilityService.recordedSteps.size} accessibility events captured")
+        refreshMenu()
         refreshNotif()
-        stopSelf()
     }
 
     // ── Capture overlay ───────────────────────────────────────────────────────
@@ -261,6 +375,7 @@ class FloatingOverlayService : Service() {
     // ── Coord picker ──────────────────────────────────────────────────────────
     private fun showCoordPicker(field: String) {
         if (coordPickerView != null) return
+        hideMenu()
         val dm = resources.displayMetrics
         var pickX = dm.widthPixels / 2f; var pickY = dm.heightPixels / 2f
         var lastRX = 0f; var lastRY = 0f
