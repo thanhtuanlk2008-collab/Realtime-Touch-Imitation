@@ -1,6 +1,8 @@
 package com.borgorninja.androtask
 
 import android.app.*
+import android.text.InputType
+import android.widget.EditText
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -30,6 +32,8 @@ class FloatingOverlayService : Service() {
     private var overlayView:     View? = null
     private var coordPickerView: View? = null
     private var isRecording = false
+    private val stepMarkerViews = linkedMapOf<Int, View>()
+    private var pendingSwipeStart: Pair<Float, Float>? = null
 
     // Touch tracking
     private var downRawX  = 0f; private var downRawY  = 0f
@@ -67,7 +71,7 @@ class FloatingOverlayService : Service() {
 
     override fun onDestroy() {
         MacroAccessibilityService.isRecording = false
-        removeBubble(); hideMenu(); removeOverlay(); hideCoordPicker()
+        removeBubble(); hideMenu(); removeOverlay(); hideCoordPicker(); removeStepMarkers()
         AppLogger.i("Overlay", "Service destroyed")
         super.onDestroy()
     }
@@ -168,6 +172,26 @@ class FloatingOverlayService : Service() {
         panel.addView(menuRecordButton, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ))
+
+        val addTap = Button(this).apply {
+            isAllCaps = false
+            text = "+ Thêm điểm chạm"
+            setOnClickListener { showCoordPicker(FIELD_ADD_TAP) }
+        }
+        panel.addView(addTap, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        val addSwipe = Button(this).apply {
+            isAllCaps = false
+            text = "+ Thêm đường vuốt"
+            setOnClickListener { showCoordPicker(FIELD_ADD_SWIPE_START) }
+        }
+        panel.addView(addSwipe, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        val showMarkers = Button(this).apply {
+            isAllCaps = false
+            text = "Hiện dấu thao tác"
+            setOnClickListener { hideMenu(); showStepMarkers() }
+        }
+        panel.addView(showMarkers, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
         val openApp = Button(this).apply {
             isAllCaps = false
             text = "Mở ứng dụng"
@@ -244,6 +268,8 @@ class FloatingOverlayService : Service() {
         synchronized(MacroAccessibilityService.recordedSteps) {
             MacroAccessibilityService.recordedSteps.clear()
         }
+        removeStepMarkers()
+        stepListRevision++
         MacroAccessibilityService.lastRecordedEventTime = 0L
         AppLogger.i("Record", "Passive accessibility recording started")
         refreshMenu()
@@ -259,6 +285,8 @@ class FloatingOverlayService : Service() {
         AppLogger.i("Record", "Passive recording stopped — ${MacroAccessibilityService.recordedSteps.size} accessibility events captured")
         refreshMenu()
         refreshNotif()
+        stepListRevision++
+        showStepMarkers()
     }
 
     // ── Capture overlay ───────────────────────────────────────────────────────
@@ -433,7 +461,18 @@ class FloatingOverlayService : Service() {
                         if(tx in m..(m+bw)&&ty in by..(by+bh)){coordPickResult.value=null;hideCoordPicker()}
                         val sx=w-m-bw
                         if(tx in sx..(sx+bw)&&ty in by..(by+bh)){
-                            coordPickResult.value=Pair(field,Pair(pickX,pickY));hideCoordPicker()
+                            if (field == FIELD_ADD_SWIPE_START) {
+                                pendingSwipeStart = pickX to pickY
+                                hideCoordPicker()
+                                showCoordPicker(FIELD_ADD_SWIPE_END)
+                                Toast.makeText(this@FloatingOverlayService, "Chọn điểm kết thúc đường vuốt.", Toast.LENGTH_SHORT).show()
+                            } else if (field == FIELD_ADD_TAP || field == FIELD_ADD_SWIPE_END) {
+                                completeCoordinatePick(field, pickX, pickY)
+                                hideCoordPicker()
+                            } else {
+                                coordPickResult.value=Pair(field,Pair(pickX,pickY))
+                                hideCoordPicker()
+                            }
                         }
                     }
                 };return true
@@ -448,6 +487,177 @@ class FloatingOverlayService : Service() {
         }
         wm.addView(view, lp); coordPickerView = view
         bringBubbleToFront()
+    }
+
+
+    private fun completeCoordinatePick(field: String, x: Float, y: Float) {
+        when (field) {
+            FIELD_ADD_TAP -> {
+                synchronized(MacroAccessibilityService.recordedSteps) {
+                    val list = MacroAccessibilityService.recordedSteps
+                    list.add(MacroStep(macroId = 0L, stepIndex = list.size, type = StepType.TAP,
+                        x = x, y = y, duration = 100L, delayBefore = 0L, label = "Manual tap point"))
+                }
+                stepListRevision++
+                showStepMarkers()
+                Toast.makeText(this, "Đã thêm điểm chạm. Nhấn vào dấu số để chỉnh thời gian.", Toast.LENGTH_SHORT).show()
+            }
+            FIELD_ADD_SWIPE_END -> {
+                val start = pendingSwipeStart
+                pendingSwipeStart = null
+                if (start != null) {
+                    synchronized(MacroAccessibilityService.recordedSteps) {
+                        val list = MacroAccessibilityService.recordedSteps
+                        list.add(MacroStep(macroId = 0L, stepIndex = list.size, type = StepType.SWIPE,
+                            x = start.first, y = start.second, x2 = x, y2 = y,
+                            duration = 350L, delayBefore = 0L, label = "Manual swipe"))
+                    }
+                    stepListRevision++
+                    showStepMarkers()
+                    Toast.makeText(this, "Đã thêm đường vuốt. Nhấn vào dấu số để chỉnh thời gian.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun showStepMarkers() {
+        if (!Settings.canDrawOverlays(this)) return
+        removeStepMarkers()
+        val snapshot = synchronized(MacroAccessibilityService.recordedSteps) {
+            MacroAccessibilityService.recordedSteps.toList()
+        }
+        snapshot.forEachIndexed { index, step ->
+            val markerSize = dp(46)
+            val marker = object : View(this) {
+                private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+                private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = dp(2).toFloat()
+                }
+                private val numberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE; textAlign = Paint.Align.CENTER
+                    textSize = dp(13).toFloat(); typeface = Typeface.DEFAULT_BOLD
+                }
+                override fun onDraw(canvas: Canvas) {
+                    val cx = width / 2f; val cy = height / 2f
+                    fill.color = when (step.type) {
+                        StepType.SWIPE, StepType.SCROLL_UP, StepType.SCROLL_DOWN -> Color.rgb(230, 126, 34)
+                        StepType.LONG_PRESS -> Color.rgb(156, 39, 176)
+                        else -> Color.rgb(30, 136, 229)
+                    }
+                    canvas.drawCircle(cx, cy, minOf(cx, cy) - dp(3), fill)
+                    canvas.drawCircle(cx, cy, minOf(cx, cy) - dp(3), border)
+                    canvas.drawText((index + 1).toString(), cx, cy + dp(4).toFloat(), numberPaint)
+                }
+            }
+            val lp = baseLp(markerSize, markerSize).apply {
+                gravity = Gravity.TOP or Gravity.START
+                flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                x = (step.x.toInt() - markerSize / 2).coerceAtLeast(0)
+                y = (step.y.toInt() - markerSize / 2).coerceAtLeast(0)
+            }
+            var downX = 0f
+            var downY = 0f
+            var dragged = false
+            marker.setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; dragged = false; true }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downX
+                        val dy = event.rawY - downY
+                        if (kotlin.math.hypot(dx, dy) > dp(6)) dragged = true
+                        if (dragged) {
+                            lp.x = (lp.x + dx.toInt()).coerceAtLeast(0)
+                            lp.y = (lp.y + dy.toInt()).coerceAtLeast(0)
+                            runCatching { wm.updateViewLayout(view, lp) }
+                            downX = event.rawX; downY = event.rawY
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (dragged) {
+                            val centerX = lp.x + markerSize / 2f
+                            val centerY = lp.y + markerSize / 2f
+                            synchronized(MacroAccessibilityService.recordedSteps) {
+                                val list = MacroAccessibilityService.recordedSteps
+                                if (index in list.indices) {
+                                    val old = list[index]
+                                    val dx = centerX - old.x; val dy = centerY - old.y
+                                    list[index] = old.copy(x = centerX, y = centerY,
+                                        x2 = if (old.type == StepType.SWIPE) old.x2 + dx else old.x2,
+                                        y2 = if (old.type == StepType.SWIPE) old.y2 + dy else old.y2)
+                                }
+                            }
+                            stepListRevision++
+                            showStepMarkers()
+                        } else showStepTimingDialog(index)
+                        true
+                    }
+                    else -> true
+                }
+            }
+            try {
+                wm.addView(marker, lp)
+                stepMarkerViews[index] = marker
+            } catch (e: Exception) {
+                AppLogger.w("Overlay", "Could not show step marker " + (index + 1) + ": " + e.message)
+            }
+        }
+    }
+
+    private fun removeStepMarkers() {
+        stepMarkerViews.values.forEach { view -> runCatching { wm.removeView(view) } }
+        stepMarkerViews.clear()
+    }
+
+    private fun showStepTimingDialog(index: Int) {
+        val step = synchronized(MacroAccessibilityService.recordedSteps) {
+            MacroAccessibilityService.recordedSteps.getOrNull(index)
+        } ?: return
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+        }
+        val durationInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(step.duration.toString())
+            hint = "Thời lượng thao tác (ms)"
+        }
+        val delayInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(step.delayBefore.toString())
+            hint = "Chờ trước khi chạy (ms)"
+        }
+        content.addView(TextView(this).apply { text = "Thời lượng thao tác (ms)"; setTextColor(Color.WHITE) })
+        content.addView(durationInput)
+        content.addView(TextView(this).apply { text = "Thời gian chờ trước thao tác (ms)"; setTextColor(Color.WHITE) })
+        content.addView(delayInput)
+        AlertDialog.Builder(this)
+            .setTitle("Chỉnh thao tác " + (index + 1))
+            .setView(content)
+            .setPositiveButton("Lưu") { _, _ ->
+                val duration = durationInput.text.toString().toLongOrNull()?.coerceAtLeast(1L) ?: step.duration
+                val delay = delayInput.text.toString().toLongOrNull()?.coerceAtLeast(0L) ?: step.delayBefore
+                synchronized(MacroAccessibilityService.recordedSteps) {
+                    val list = MacroAccessibilityService.recordedSteps
+                    if (index in list.indices) list[index] = list[index].copy(duration = duration, delayBefore = delay)
+                }
+                stepListRevision++
+                showStepMarkers()
+            }
+            .setNeutralButton("Xóa") { _, _ ->
+                synchronized(MacroAccessibilityService.recordedSteps) {
+                    val list = MacroAccessibilityService.recordedSteps
+                    if (index in list.indices) {
+                        list.removeAt(index)
+                        list.indices.forEach { i -> list[i] = list[i].copy(stepIndex = i) }
+                    }
+                }
+                stepListRevision++
+                showStepMarkers()
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
     }
 
     private fun hideCoordPicker() {
@@ -507,6 +717,10 @@ class FloatingOverlayService : Service() {
         const val EXTRA_PICK_FIELD       = "pick_field"
         const val FIELD_XY               = "xy"
         const val FIELD_XY2              = "xy2"
+        const val FIELD_ADD_TAP            = "add_tap"
+        const val FIELD_ADD_SWIPE_START    = "add_swipe_start"
+        const val FIELD_ADD_SWIPE_END      = "add_swipe_end"
+        @Volatile var stepListRevision: Long = 0L
         val coordPickResult = MutableStateFlow<Pair<String, Pair<Float,Float>>?>(null)
     }
 }
