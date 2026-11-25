@@ -632,7 +632,7 @@ class FloatingOverlayService : Service() {
         content.addView(durationInput)
         content.addView(TextView(this).apply { text = "Thời gian chờ trước thao tác (ms)"; setTextColor(Color.WHITE) })
         content.addView(delayInput)
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Chỉnh thao tác " + (index + 1))
             .setView(content)
             .setPositiveButton("Lưu") { _, _ ->
@@ -657,7 +657,9 @@ class FloatingOverlayService : Service() {
                 showStepMarkers()
             }
             .setNegativeButton("Đóng", null)
-            .show()
+            .create()
+        dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        dialog.show()
     }
 
     private fun hideCoordPicker() {
