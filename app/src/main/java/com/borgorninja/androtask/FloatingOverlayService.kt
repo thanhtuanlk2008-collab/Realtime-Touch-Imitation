@@ -121,19 +121,22 @@ class FloatingOverlayService : Service() {
         if (isRecording) return
         isRecording = true
         MacroAccessibilityService.isRecording = true
-        MacroAccessibilityService.recordedSteps.clear()
-        AppLogger.i("Record", "Recording started")
+        synchronized(MacroAccessibilityService.recordedSteps) {
+            MacroAccessibilityService.recordedSteps.clear()
+        }
+        MacroAccessibilityService.lastRecordedEventTime = 0L
+        AppLogger.i("Record", "Passive accessibility recording started")
         bubbleView?.invalidate()
         refreshNotif()
-        showOverlay()
-        bringBubbleToFront()
+        // Passive recording: do not add a touchable full-screen overlay.
+        // The floating bubble is the only overlay; game input remains untouched.
     }
 
     private fun stopRecordingAndHide() {
         isRecording = false
         MacroAccessibilityService.isRecording = false
         removeOverlay(); removeBubble(); hideCoordPicker()
-        AppLogger.i("Record", "Recording stopped — ${MacroAccessibilityService.recordedSteps.size} steps captured")
+        AppLogger.i("Record", "Passive recording stopped — ${MacroAccessibilityService.recordedSteps.size} accessibility events captured")
         refreshNotif()
         stopSelf()
     }
