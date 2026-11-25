@@ -1,8 +1,10 @@
 package com.borgorninja.androtask.ui
 
 import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -63,7 +65,9 @@ fun MacroEditorScreen(navController: NavController, macroId: Long, vm: MacroView
             val svcRec = MacroAccessibilityService.isRecording
             if (isRecording != svcRec) isRecording = svcRec
             if (isRecording) {
-                val captured = MacroAccessibilityService.recordedSteps.toList()
+                val captured = synchronized(MacroAccessibilityService.recordedSteps) {
+                    MacroAccessibilityService.recordedSteps.toList()
+                }
                 if (captured.size != steps.size) {
                     steps.clear()
                     steps.addAll(captured.map { it.copy(macroId = macroId) })
@@ -146,17 +150,23 @@ fun MacroEditorScreen(navController: NavController, macroId: Long, vm: MacroView
                         return@Button
                     }
                     if (isRecording) {
-                        // Stop recording — service stops itself and bubble disappears
+                        // Stop capture but keep the floating control bubble available.
                         context.startService(
                             Intent(context, FloatingOverlayService::class.java)
                                 .putExtra(FloatingOverlayService.CMD, FloatingOverlayService.CMD_STOP)
                         )
                     } else {
-                        // Clear previous steps and start
-                        MacroAccessibilityService.recordedSteps.clear()
+                        if (!Settings.canDrawOverlays(context)) {
+                            Toast.makeText(context, "Allow display over other apps first.", Toast.LENGTH_LONG).show()
+                            navController.navigate("onboarding")
+                            return@Button
+                        }
+                        synchronized(MacroAccessibilityService.recordedSteps) {
+                            MacroAccessibilityService.recordedSteps.clear()
+                        }
                         steps.clear()
-                        // Start the overlay service which shows the bubble + overlay
-                        context.startService(
+                        ContextCompat.startForegroundService(
+                            context,
                             Intent(context, FloatingOverlayService::class.java)
                                 .putExtra(FloatingOverlayService.CMD, FloatingOverlayService.CMD_START)
                         )
