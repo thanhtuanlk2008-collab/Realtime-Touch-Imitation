@@ -42,6 +42,9 @@ fun HomeScreen(navController: NavController, vm: MacroViewModel) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceDark),
                 actions = {
+                    IconButton(onClick = { navController.navigate("autoclicker") }) {
+                        Icon(Icons.Default.TouchApp, "Auto Clicker", tint = Green400)
+                    }
                     IconButton(onClick = { navController.navigate("settings") }) {
                         Icon(Icons.Default.Settings, "Settings", tint = OnBgVariant)
                     }
