@@ -8,6 +8,7 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -23,9 +24,6 @@ class MainActivity : ComponentActivity() {
         AppLogger.i("Main", "App started")
         createNotificationChannel()
 
-        if (Settings.canDrawOverlays(this))
-            startService(Intent(this, FloatingOverlayService::class.java))
-
         setContent {
             AndroTaskTheme {
                 val nav = rememberNavController()
@@ -40,6 +38,16 @@ class MainActivity : ComponentActivity() {
                     composable("logs")        { LogScreen(nav) }
                 }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-check after returning from Android's overlay-permission screen.
+        if (Settings.canDrawOverlays(this)) {
+            ContextCompat.startForegroundService(
+                this, Intent(this, FloatingOverlayService::class.java)
+            )
         }
     }
 
