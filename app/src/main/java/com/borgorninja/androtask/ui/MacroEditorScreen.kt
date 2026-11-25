@@ -161,7 +161,7 @@ fun MacroEditorScreen(navController: NavController, macroId: Long, vm: MacroView
                                 .putExtra(FloatingOverlayService.CMD, FloatingOverlayService.CMD_START)
                         )
                         Toast.makeText(context,
-                            "Recording started — perform your gestures, then tap the bubble to stop",
+                            "Passive recording started. Game input is not intercepted; only accessibility-exposed UI events can be captured.",
                             Toast.LENGTH_LONG).show()
                     }
                 },
@@ -189,7 +189,7 @@ fun MacroEditorScreen(navController: NavController, macroId: Long, vm: MacroView
 
             if (isRecording) {
                 Text(
-                    "Perform your gestures on any app — they're being captured",
+                    "Touch input is not intercepted. Android exposes only some UI events; raw coordinates, continuous swipes and multi-touch may not be available, especially in games.",
                     style = MaterialTheme.typography.bodySmall,
                     color = OnBgVariant,
                     modifier = Modifier.padding(horizontal = 4.dp)
@@ -233,7 +233,7 @@ fun MacroEditorScreen(navController: NavController, macroId: Long, vm: MacroView
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No steps yet — press Start recording",
+                    Text("No accessibility events captured yet. Games may not expose touch events to Android Accessibility.",
                         style = MaterialTheme.typography.bodySmall, color = OnBgVariant)
                 }
             } else {
