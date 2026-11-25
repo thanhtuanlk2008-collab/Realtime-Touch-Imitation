@@ -96,6 +96,20 @@ class MacroViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // Run an unsaved Auto Clicker sequence using the same accessibility playback engine.
+    fun runAutoClickerSteps(steps: List<MacroStep>, repeats: Int, globalTimerMillis: Long) {
+        viewModelScope.launch {
+            val svc = MacroAccessibilityService.instance ?: return@launch
+            svc.playSteps(
+                steps = steps,
+                loopCount = repeats,
+                loopDelay = 0L,
+                speedMultiplier = 1f,
+                maxRunMillis = globalTimerMillis
+            )
+        }
+    }
+
     // ── Scheduling ────────────────────────────────────────────────────────────
     fun addTrigger(t: ScheduledTrigger, onDone: (Long) -> Unit = {}) {
         viewModelScope.launch { onDone(repo.addTrigger(t)) }
