@@ -13,6 +13,7 @@ import android.view.*
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.borgorninja.androtask.data.MacroStep
 import com.borgorninja.androtask.data.StepType
@@ -233,6 +234,11 @@ class FloatingOverlayService : Service() {
     // ── Recording ─────────────────────────────────────────────────────────────
     private fun startRecording() {
         if (isRecording) return
+        if (MacroAccessibilityService.instance == null) {
+            Toast.makeText(this, "Hãy bật Accessibility Service trước khi ghi.", Toast.LENGTH_LONG).show()
+            AppLogger.w("Record", "Recording not started: accessibility service is not connected")
+            return
+        }
         isRecording = true
         MacroAccessibilityService.isRecording = true
         synchronized(MacroAccessibilityService.recordedSteps) {
